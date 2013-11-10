@@ -25,23 +25,72 @@ class Exnode(object):
     """ Store and retrieve data from an exnode file
     """
     def __init__(self, filepath):
-        self.fields = []
-        self.nodes = []
+        self.sections = []
         with FileWithLineNumber(filepath, 'r') as f:
             self._read_header(f)
-            self.num_node_values = self._calc_num_node_values()
             while True:
                 try:
-                    self._read_node(f)
+                    self.sections.append(ExnodeSection(f, self))
                 except EOFError:
                     break
-        self.num_nodes = len(self.nodes)
+        self.num_nodes = sum(section.num_nodes for section in self.sections)
 
     def _read_header(self, f):
         self.group_name = read_regex(f,
                 r'Group name: ([A-Za-z0-9_\:\.]+)$')
-        self.num_fields = int(read_regex(f,
-                r'#Fields=\s*([0-9]+)'))
+
+    def node_values(self, field_name, component_name, node_num):
+        """ Return all the field component derivative values
+            at the given node number
+        """
+        for section in self.sections:
+            try:
+                return section.node_values(field_name, component_name, node_num)
+            except NodeNotFound:
+                pass
+        raise ValueError("Node %d not found in any exnode section." % node_num)
+
+    def node_value(self, field_name, component_name, node_num,
+            derivative_number=1):
+        """ Return the field component value at the given node and derivative
+            Derivatives are numbered from 1, with 1 being no derivative.
+        """
+        for section in self.sections:
+            try:
+                return section.node_value(field_name, component_name, node_num,
+                        derivative_number)
+            except NodeNotFound:
+                pass
+        raise ValueError("Node %d not found in any exnode section." % node_num)
+
+
+class ExnodeSection(object):
+    def __init__(self, f, exnode):
+        self.exnode = exnode
+        self.fields = []
+        self.nodes = []
+        self._read_section_header(f)
+        self.num_node_values = self._calc_num_node_values()
+        while True:
+            try:
+                self._read_node(f)
+            except EOFError:
+                break
+            except ExfileError:
+                # Could be start of new section
+                f.rollback()
+                break
+        self.num_nodes = len(self.nodes)
+
+    def _read_section_header(self, f):
+        try:
+            self.num_fields = int(read_regex(f,
+                    r'#Fields=\s*([0-9]+)'))
+        except ExfileError:
+            if f.readline() == '':
+                raise EOFError
+            else:
+                raise
         for i in range(self.num_fields):
             field = ExnodeField(f, self)
             self.fields.append(field)
@@ -92,9 +141,12 @@ class Exnode(object):
         """ Return all the field component derivative values
             at the given node number
         """
+        try:
+            node = next(n for n in self.nodes if n.number == node_num)
+        except StopIteration:
+            raise NodeNotFound()
         field, component = self._get_field_component(
                 field_name, component_name)
-        node = self.nodes[node_num - 1]
 
         value_index = component.value_index - 1
         component_num_values = 1 + component.num_derivatives
@@ -104,8 +156,11 @@ class Exnode(object):
         """ Return the field component value at the given node and derivative
             Derivatives are numbered from 1, with 1 being no derivative.
         """
+        try:
+            node = next(n for n in self.nodes if n.number == node_num)
+        except StopIteration:
+            raise NodeNotFound()
         field, component = self._get_field_component(field_name, component_name)
-        node = self.nodes[node_num - 1]
 
         value_index = component.value_index - 1
         value_index += derivative_number - 1
@@ -364,22 +419,33 @@ class FileWithLineNumber(object):
         else:
             self.file = open(path, *args)
         self.linenum = 0
+        self.prev_pos = self.file.tell()
+        self.cur_pos = self.prev_pos
 
     def __enter__ (self):
         return self
 
     def readline(self):
         self.linenum += 1
-        return self.file.readline()
+        line = self.file.readline()
+        self.prev_pos, self.cur_pos = self.cur_pos, self.file.tell()
+        return line
+
+    def rollback(self):
+        self.file.seek(self.prev_pos)
 
     def __exit__ (self, exc_type, exc_value, traceback):
         self.file.close()
 
 
+class NodeNotFound(KeyError):
+    pass
+
+
 class ExfileError(ValueError):
     def __init__(self, file, message):
         new_message = "Line %d: %s" % (file.linenum, message)
-        ValueError.__init__(self, new_message)
+        super(ExfileError, self).__init__(new_message)
 
 
 def expect_line(f, expected):
