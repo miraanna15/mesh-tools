@@ -4,6 +4,7 @@
     and doesn't attempt to be able to read any valid file.
 """
 
+import gzip
 import numpy as np
 import re
 
@@ -357,8 +358,11 @@ class ExelemElement(object):
 
 
 class FileWithLineNumber(object):
-    def __init__ (self, *args):
-        self.file = open(*args)
+    def __init__ (self, path, *args):
+        if path.endswith('.gz'):
+            self.file = gzip.open(path, *args)
+        else:
+            self.file = open(path, *args)
         self.linenum = 0
 
     def __enter__ (self):
