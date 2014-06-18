@@ -401,6 +401,7 @@ class ExelemElement(object):
     """
     def __init__(self, indices, nodes, values, scale_factors):
         self.indices = indices
+        self.number = indices[0]
         self.nodes = nodes
         self.values = values
         self.scale_factors = scale_factors
