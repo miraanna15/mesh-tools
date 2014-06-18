@@ -286,20 +286,21 @@ class Exelem(object):
         indices = map(int, element_line.split(':')[1].split())
         if indices[1] != 0 or indices[2] != 0:
             raise ExfileError(f, "Face or line elements not supported")
-        expect_line(f, "Values:")
 
         values = []
-        while len(values) < self.num_element_values:
-            line = f.readline()
-            values.extend(map(float, line.split()))
-        expect_line(f, "Nodes:")
+        if self.num_element_values > 0:
+            expect_line(f, "Values:")
+            while len(values) < self.num_element_values:
+                line = f.readline()
+                values.extend(map(float, line.split()))
 
+        expect_line(f, "Nodes:")
         nodes = []
         while len(nodes) < self.num_nodes:
             line = f.readline()
             nodes.extend(map(int, line.split()))
-        expect_line(f, "Scale factors:")
 
+        expect_line(f, "Scale factors:")
         scale_factors = []
         while len(scale_factors) < self.num_scale_factors:
             line = f.readline()
