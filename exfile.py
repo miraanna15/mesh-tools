@@ -9,6 +9,7 @@ import numpy as np
 import re
 
 __all__ = [
+        "Exregion"  
         "Exnode",
         "ExnodeField",
         "ExnodeComponent",
@@ -20,6 +21,185 @@ __all__ = [
         "ExfileError",
         ]
 
+class Exregion(object):
+    """ Store and retrieve data from an exelem file
+    """
+    def __init__(self, filepath):
+        self.fields = []
+        self.elements = []
+        self.sections = []
+        self.nodeids = []
+        with FileWithLineNumber(filepath, 'r') as f:
+            self._read_header(f)
+            self.num_element_values = self._calc_num_element_values()
+            while True:
+                try:
+                    self.sections.append(ExnodeSection(f, self))
+                except ExfileError:
+                    break
+#Load the node ids
+            uid = set()
+            for section in self.sections:
+                for node in section.nodes:
+                    uid.add(node.number)
+            self.nodeids = list(uid)
+# Go back to the past 2 lines    
+            f.rollbacktwice()
+# read the exelem header data                
+            self.num_dims = read_regex(f, r'Shape.\s+Dimension=\s*([0-9]+)')
+            self.num_scale_factor_sets = int(read_regex(f, r'#Scale factor sets=\s*([0-9]+)'))
+            self.num_scale_factors = 0
+            for i in range(self.num_scale_factor_sets):
+                self.num_scale_factors += int(read_regex(f, r'#Scale factors\s*=\s*([0-9]+)'))
+            self.num_nodes = int(read_regex(f, r'#Nodes=\s*([0-9]+)'))
+            self.num_fields = int(read_regex(f, r'#Fields=\s*([0-9]+)'))
+            for i in range(self.num_fields):
+                field = ExelemField(f, self)
+                self.fields.append(field)
+            while True:
+                try:
+                    self._read_element(f)
+                except EOFError:
+                    break
+        self.num_elements = len(self.elements)
+        #self.num_nodes = sum(section.num_nodes for section in self.sections)
+        self.num_nodes = len(self.nodeids)
+
+    def _read_header(self, f):
+        line = f.readline().strip()
+        regex = r'Group name|Region: ([A-Za-z0-9_\:\.\/]+)$'
+#Skip root region specification        
+        while True:
+            match = re.search(regex, line)
+            if match is not None:
+                if len(match.groups()) == 1:
+                    self.group_name = match.group(1)
+                else:
+                    self.group_name = match.groups()
+                line = f.readline().strip()
+            else:
+                break
+#ZINC generated exregion files have  !#nodeset nodes, check for that
+        regex = r'nodeset nodes$'
+        match = re.search(regex, line)
+        if match is None:
+            f.rollback();            
+            
+    def node_values(self, field_name, component_name, node_num):
+        """ Return all the field component derivative values
+            at the given node number
+        """
+        for section in self.sections:
+            try:
+                return section.node_values(field_name, component_name, node_num)
+            except NodeNotFound:
+                pass
+        raise ValueError("Node %d not found in any exnode section." % node_num)
+
+    def node_value(self, field_name, component_name, node_num,
+            derivative_number=1):
+        """ Return the field component value at the given node and derivative
+            Derivatives are numbered from 1, with 1 being no derivative.
+        """
+        for section in self.sections:
+            try:
+                return section.node_value(field_name, component_name, node_num,
+                        derivative_number)
+            except NodeNotFound:
+                pass
+        raise ValueError("Node %d not found in any exnode section." % node_num)
+            
+
+    def _calc_num_element_values(self):
+        num_values = 0
+        for field in self.fields:
+            for component in field.components:
+                if component.component_type == 'grid based':
+                    component_num_values = np.product(
+                            [i + 1 for i in component.divisions])
+                    num_values += component_num_values
+        return num_values
+
+    def _read_element(self, f):
+        element_line = f.readline()
+        if element_line == "":
+            raise EOFError
+        try:
+            indices = map(int, element_line.split(':')[1].split())
+        except:
+            print element_line
+            raise
+        if indices[1] == 0 and indices[2] == 0:
+            #raise ExfileError(f, "Face or line elements not supported")
+            values = []
+            if self.num_element_values > 0:
+                expect_line(f, "Values:")
+                while len(values) < self.num_element_values:
+                    line = f.readline()
+                    values.extend(map(float, line.split()))
+    
+#Ignore faces, lines
+            nodes = []   
+            element_line = f.readline()
+#Move file pointer until Nodes are found            
+            regex = r'Nodes:'
+            match = re.search(regex, element_line)
+            while match is None:
+                element_line = f.readline()
+                match = re.search(regex, element_line)
+            while len(nodes) < self.num_nodes:
+                line = f.readline()
+                nodes.extend(map(int, line.split()))
+    
+            scale_factors = []
+            element_line = f.readline()
+            regex = r'Scale factors:'
+            if re.search(regex, element_line) is not None: 
+                while len(scale_factors) < self.num_scale_factors:
+                    line = f.readline()
+                    scale_factors.extend(map(float, line.split()))
+            else:
+                f.rollback()
+            
+            self.elements.append(ExelemElement(indices, nodes, values, scale_factors))
+
+    def element_values(self, field_name, component_name, element_num):
+        """Return the all field component values at the given element number
+        """
+        element = self.elements[element_num - 1]
+        value_index = 0
+        for field in self.fields:
+            for component in field.components:
+                if component.component_type == 'grid based':
+                    component_num_values = np.product(
+                            [i + 1 for i in component.divisions])
+                    if (field.name == field_name and
+                            component.name == str(component_name)):
+                        return element.values[value_index:value_index + component_num_values]
+                    else:
+                        value_index += component_num_values
+        raise ValueError("Couldn't find field and component values")
+    
+    def quadPhi1(self,xi):
+        return 2*(xi-1.0)*(xi-0.5)
+    
+    def quadPhi2(self,xi):
+        return 4*xi*(1.0-xi)
+    
+    def quadPhi3(self,xi):
+        return 2*xi*(xi-0.5)
+    
+    def quad3Delembasisfactors(self,xi1,xi2,xi3):
+        functions = [self.quadPhi1,self.quadPhi2,self.quadPhi3]
+        phi=[]
+        for k in range(0,3):
+            phik = functions[k](xi3)
+            for j in range(0,3):
+                phij = functions[j](xi2)
+                for i in range(0,3):
+                    phii = functions[i](xi1)
+                    phi.append(phii*phij*phik)
+        return phi
 
 class Exnode(object):
     """ Store and retrieve data from an exnode file
@@ -36,8 +216,7 @@ class Exnode(object):
         self.num_nodes = sum(section.num_nodes for section in self.sections)
 
     def _read_header(self, f):
-        self.group_name = read_regex(f,
-                r'Group name: ([A-Za-z0-9_\:\.]+)$')
+        self.group_name = read_regex(f, r'Group name|Region: ([A-Za-z0-9_\:\.]+)$')
 
     def node_values(self, field_name, component_name, node_num):
         """ Return all the field component derivative values
@@ -205,7 +384,7 @@ class ExnodeComponent(object):
         # 1.  Value index= 49, #Derivatives= 7(d/ds1,d/ds2,d2/ds1ds2,d/ds3,d2/ds1ds3,d2/ds2ds3,d3/ds1ds2ds3)
         declaration = f.readline().strip().split(',', 1)
         self.name = read_string_regex(f, declaration[0],
-                r'^([a-zA-Z0-9]+)\.')
+                r'^([a-zA-Z0-9 ]+)\.')
         self.value_index = int(read_string_regex(f, declaration[0],
                 r'Value index\s*=\s*([0-9]+)'))
         self.num_derivatives = int(read_string_regex(f, declaration[1],
@@ -240,6 +419,7 @@ class Exelem(object):
     def __init__(self, filepath):
         self.fields = []
         self.elements = []
+        self.scale_factors = np.zeros([40, 8])
         with FileWithLineNumber(filepath, 'r') as f:
             self._read_header(f)
             self.num_element_values = self._calc_num_element_values()
@@ -252,9 +432,14 @@ class Exelem(object):
 
     def _read_header(self, f):
         self.group_name = read_regex(f,
-                r'Group name: ([A-Za-z0-9_\:\.]+)')
+                r'Group name|Region: ([A-Za-z0-9_\:\.]+)')
         self.num_dims = int(read_regex(f,
                 r'Shape.\s+Dimension=\s*([0-9]+)'))
+        if self.num_dims == 1:
+            line = f.readline()
+            while line.strip() != 'Shape.  Dimension=3':
+                line = f.readline()
+            self.num_dims = 3
         self.num_scale_factor_sets = int(read_regex(f,
                 r'#Scale factor sets=\s*([0-9]+)'))
         self.num_scale_factors = 0
@@ -281,33 +466,63 @@ class Exelem(object):
 
     def _read_element(self, f):
         element_line = f.readline()
+        if element_line == " #Scale factor sets= 1\n":
+            element_line = f.readline()
+            while element_line.split()[0] != 'Element:':
+                element_line = f.readline()
         if element_line == "":
             raise EOFError
         indices = map(int, element_line.split(':')[1].split())
-        if indices[1] != 0 or indices[2] != 0:
-            raise ExfileError(f, "Face or line elements not supported")
+        if indices[1] == 0 and indices[2] == 0:
+            # raise ExfileError(f, "Face or line elements not supported")
+            values = []
+            if self.num_element_values > 0:
+                expect_line(f, "Values:")
+                while len(values) < self.num_element_values:
+                    line = f.readline()
+                    values.extend(map(float, line.split()))
 
-        values = []
-        if self.num_element_values > 0:
-            expect_line(f, "Values:")
-            while len(values) < self.num_element_values:
+            line = f.readline().strip()
+            nodes = []
+            if line == "Faces:":
+                faces = []
+                while len(faces) <= 15:
+                    line = f.readline()
+                    faces.extend(map(int, line.split()))
+                temp = f.readline().strip()
+                nodes = []
+                while len(nodes) < self.num_nodes:
+                    line = f.readline()
+                    nodes.extend(map(int, line.split()))
+            elif line == "Nodes:":
+                nodes = []
+                while len(nodes) < self.num_nodes:
+                    line = f.readline()
+                    nodes.extend(map(int, line.split()))
+
+            """
+            expect_line(f, "Faces:")
+            faces = []
+            while len(faces) <= 15:
                 line = f.readline()
-                values.extend(map(float, line.split()))
+                faces.extend(map(int, line.split()))
 
-        expect_line(f, "Nodes:")
-        nodes = []
-        while len(nodes) < self.num_nodes:
-            line = f.readline()
-            nodes.extend(map(int, line.split()))
-
-        expect_line(f, "Scale factors:")
-        scale_factors = []
-        while len(scale_factors) < self.num_scale_factors:
-            line = f.readline()
-            scale_factors.extend(map(float, line.split()))
-
-        self.elements.append(
-                ExelemElement(indices, nodes, values, scale_factors))
+            expect_line(f, "Nodes:")
+            nodes = []
+            while len(nodes) < self.num_nodes:
+                line = f.readline()
+                nodes.extend(map(int, line.split()))
+            """
+            expect_line(f, "Scale factors:")
+            scale_factors = []
+            while len(scale_factors) < self.num_scale_factors:
+                line = f.readline()
+                scale_factors.extend(map(float, line.split()))
+            for i in range(0, 8):
+                n = nodes[i]
+                self.scale_factors[n-1, :] = scale_factors[i*8:(i+1)*8]
+            self.elements.append(
+                    ExelemElement(indices, nodes, values, scale_factors))
 
     def element_values(self, field_name, component_name, element_num):
         """Return the all field component values at the given element number
@@ -316,6 +531,7 @@ class Exelem(object):
         value_index = 0
         for field in self.fields:
             for component in field.components:
+                print component.component_type
                 if component.component_type == 'grid based':
                     component_num_values = np.product(
                             [i + 1 for i in component.divisions])
@@ -325,7 +541,6 @@ class Exelem(object):
                     else:
                         value_index += component_num_values
         raise ValueError("Couldn't find field and component values")
-
 
 class ExelemField(object):
     """A field definition from an exelem file
@@ -361,14 +576,14 @@ class ExelemComponent(object):
         # x. l.Lagrange*l.Lagrange*l.Lagrange, no modify, standard node based.
         #   #Nodes= 8
         declaration = f.readline().strip().split(',')
-        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9]+)\.')
+        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9 ]+)\.')
         self.component_type = declaration[2].strip().strip('.')
         if self.component_type == 'standard node based':
             self._read_nodal_component(f)
         elif self.component_type == 'grid based':
             self._read_grid_component(f)
         else:
-            raise ExfileError(f, "Unsupported component type: %s" %
+            raise ExfileError(f, "Unsupported component type: %s" % 
                     self.component_type)
 
     def _read_nodal_component(self, f):
@@ -422,7 +637,7 @@ class FileWithLineNumber(object):
             self.file = open(path, *args)
         self.linenum = 0
         self.prev_pos = self.file.tell()
-        self.cur_pos = self.prev_pos
+        self.tprev_pos, self.cur_pos = self.prev_pos, self.prev_pos
 
     def __enter__ (self):
         return self
@@ -430,11 +645,18 @@ class FileWithLineNumber(object):
     def readline(self):
         self.linenum += 1
         line = self.file.readline()
-        self.prev_pos, self.cur_pos = self.cur_pos, self.file.tell()
+        self.tprev_pos, self.prev_pos, self.cur_pos = self.prev_pos, self.cur_pos, self.file.tell()
         return line
+    
+    def rollbacktwice(self):
+        self.file.seek(self.tprev_pos)
+        self.prev_pos = self.file.tell()
+        self.tprev_pos, self.cur_pos = self.prev_pos, self.prev_pos
 
     def rollback(self):
         self.file.seek(self.prev_pos)
+        self.prev_pos = self.file.tell()
+        self.tprev_pos, self.cur_pos = self.prev_pos, self.prev_pos
 
     def __exit__ (self, exc_type, exc_value, traceback):
         self.file.close()
