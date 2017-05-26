@@ -419,7 +419,7 @@ class Exelem(object):
     def __init__(self, filepath):
         self.fields = []
         self.elements = []
-        self.scale_factors = np.zeros([40, 8])
+        self.scale_factors = np.zeros([40,8])
         with FileWithLineNumber(filepath, 'r') as f:
             self._read_header(f)
             self.num_element_values = self._calc_num_element_values()
@@ -429,6 +429,8 @@ class Exelem(object):
                 except EOFError:
                     break
         self.num_elements = len(self.elements)
+        #self.scale_factors = self.scale_factors[0:self.num_elements*self.num_scale_factors/self.num_dims, 8]
+        #print self.scale_factors
 
     def _read_header(self, f):
         self.group_name = read_regex(f,
@@ -473,56 +475,40 @@ class Exelem(object):
         if element_line == "":
             raise EOFError
         indices = map(int, element_line.split(':')[1].split())
-        if indices[1] == 0 and indices[2] == 0:
-            # raise ExfileError(f, "Face or line elements not supported")
-            values = []
-            if self.num_element_values > 0:
-                expect_line(f, "Values:")
-                while len(values) < self.num_element_values:
-                    line = f.readline()
-                    values.extend(map(float, line.split()))
-
-            line = f.readline().strip()
-            nodes = []
-            if line == "Faces:":
-                faces = []
-                while len(faces) <= 15:
-                    line = f.readline()
-                    faces.extend(map(int, line.split()))
-                temp = f.readline().strip()
-                nodes = []
-                while len(nodes) < self.num_nodes:
-                    line = f.readline()
-                    nodes.extend(map(int, line.split()))
-            elif line == "Nodes:":
-                nodes = []
-                while len(nodes) < self.num_nodes:
-                    line = f.readline()
-                    nodes.extend(map(int, line.split()))
-
-            """
-            expect_line(f, "Faces:")
+        values = []
+        if self.num_element_values > 0:
+            expect_line(f, "Values:")
+            while len(values) < self.num_element_values:
+                line = f.readline()
+                print line
+                values.extend(map(float, line.split()))
+        line = f.readline().strip()
+        nodes = []
+        if line == "Faces:":
             faces = []
             while len(faces) <= 15:
                 line = f.readline()
                 faces.extend(map(int, line.split()))
-
-            expect_line(f, "Nodes:")
+            temp = f.readline().strip()
             nodes = []
             while len(nodes) < self.num_nodes:
                 line = f.readline()
                 nodes.extend(map(int, line.split()))
-            """
-            expect_line(f, "Scale factors:")
-            scale_factors = []
-            while len(scale_factors) < self.num_scale_factors:
+        elif line == "Nodes:":
+            nodes = []
+            while len(nodes) < self.num_nodes:
                 line = f.readline()
-                scale_factors.extend(map(float, line.split()))
-            for i in range(0, 8):
-                n = nodes[i]
-                self.scale_factors[n-1, :] = scale_factors[i*8:(i+1)*8]
-            self.elements.append(
-                    ExelemElement(indices, nodes, values, scale_factors))
+                nodes.extend(map(int, line.split()))
+        expect_line(f, "Scale factors:")
+        scale_factors = []
+        while len(scale_factors) < self.num_scale_factors:
+            line = f.readline()
+            scale_factors.extend(map(float, line.split()))
+            #for i in range(0, 8):
+            #    n = nodes[i]
+            #    self.scale_factors[n-1, :] = scale_factors[i*8:(i+1)*8]
+        self.elements.append(
+                ExelemElement(indices, nodes, values, scale_factors))
 
     def element_values(self, field_name, component_name, element_num):
         """Return the all field component values at the given element number
@@ -576,7 +562,7 @@ class ExelemComponent(object):
         # x. l.Lagrange*l.Lagrange*l.Lagrange, no modify, standard node based.
         #   #Nodes= 8
         declaration = f.readline().strip().split(',')
-        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9 ]+)\.')
+        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9_ ]+)\.')
         self.component_type = declaration[2].strip().strip('.')
         if self.component_type == 'standard node based':
             self._read_nodal_component(f)
