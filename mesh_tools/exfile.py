@@ -4,12 +4,13 @@
     and doesn't attempt to be able to read any valid file.
 """
 
+import sys
 import gzip
 import numpy as np
 import re
 
 __all__ = [
-        "Exregion"  
+        "Exregion",
         "Exnode",
         "ExnodeField",
         "ExnodeComponent",
@@ -20,6 +21,7 @@ __all__ = [
         "ExelemElement",
         "ExfileError",
         ]
+
 
 class Exregion(object):
     """ Store and retrieve data from an exelem file
@@ -127,7 +129,7 @@ class Exregion(object):
         try:
             indices = map(int, element_line.split(':')[1].split())
         except:
-            print element_line
+            print(element_line)
             raise
         if indices[1] == 0 and indices[2] == 0:
             #raise ExfileError(f, "Face or line elements not supported")
@@ -206,6 +208,7 @@ class Exnode(object):
     """
     def __init__(self, filepath):
         self.sections = []
+        self.nodeids = []
         with FileWithLineNumber(filepath, 'r') as f:
             self._read_header(f)
             while True:
@@ -214,6 +217,11 @@ class Exnode(object):
                 except EOFError:
                     break
         self.num_nodes = sum(section.num_nodes for section in self.sections)
+        uid = set()
+        for section in self.sections:
+            for node in section.nodes:
+                uid.add(node.number)
+        self.nodeids = list(uid)
 
     def _read_header(self, f):
         self.group_name = read_regex(f, r'Group name|Region: ([A-Za-z0-9_\:\.]+)$')
@@ -242,6 +250,15 @@ class Exnode(object):
                 pass
         raise ValueError("Node %d not found in any exnode section." % node_num)
 
+    def check_field_exists(self, field_name):
+        """ Check if a field exists.
+        """
+        try:
+            next(f for f in self.fields if f.name == field_name)
+        except StopIteration:
+            return False
+        else:
+            return True
 
 class ExnodeSection(object):
     def __init__(self, f, exnode):
@@ -295,6 +312,8 @@ class ExnodeSection(object):
                 new_values = map(float, line.split())
             except ValueError:
                 raise ExfileError(f, "Expecting node values, got: %s" % line.strip())
+
+            new_values = new_values if sys.version_info < (3, 0) else list(new_values)
             if read + len(new_values) > self.num_node_values:
                 raise ExfileError(f, "Got more node values than expected.")
             values[read:read + len(new_values)] = new_values
@@ -416,12 +435,12 @@ class ExnodeNode(object):
 class Exelem(object):
     """ Store and retrieve data from an exelem file
     """
-    def __init__(self, filepath):
+    def __init__(self, filepath, dimension):
         self.fields = []
         self.elements = []
         self.scale_factors = np.zeros([40,8])
         with FileWithLineNumber(filepath, 'r') as f:
-            self._read_header(f)
+            self._read_header(f, dimension)
             self.num_element_values = self._calc_num_element_values()
             while True:
                 try:
@@ -429,19 +448,25 @@ class Exelem(object):
                 except EOFError:
                     break
         self.num_elements = len(self.elements)
-        #self.scale_factors = self.scale_factors[0:self.num_elements*self.num_scale_factors/self.num_dims, 8]
-        #print self.scale_factors
 
-    def _read_header(self, f):
+    def _read_header(self, f, dimension):
         self.group_name = read_regex(f,
                 r'Group name|Region: ([A-Za-z0-9_\:\.]+)')
         self.num_dims = int(read_regex(f,
                 r'Shape.\s+Dimension=\s*([0-9]+)'))
-        if self.num_dims == 1:
-            line = f.readline()
-            while line.strip() != 'Shape.  Dimension=3':
-                line = f.readline()
-            self.num_dims = 3
+        if self.num_dims != dimension:
+            # need to skip to the elements of the dimension that we care about
+            while True:
+                num_dims = 0
+                try:
+                    num_dims = int(read_regex(f, r'Shape.\s+Dimension=\s*([0-9]+)'))
+                except ExfileError:
+                    pass
+                else:
+                    if num_dims == dimension:
+                        self.num_dims = dimension
+                        break
+
         self.num_scale_factor_sets = int(read_regex(f,
                 r'#Scale factor sets=\s*([0-9]+)'))
         self.num_scale_factors = 0
@@ -480,7 +505,6 @@ class Exelem(object):
             expect_line(f, "Values:")
             while len(values) < self.num_element_values:
                 line = f.readline()
-                print line
                 values.extend(map(float, line.split()))
         line = f.readline().strip()
         nodes = []
@@ -499,6 +523,7 @@ class Exelem(object):
             while len(nodes) < self.num_nodes:
                 line = f.readline()
                 nodes.extend(map(int, line.split()))
+    
         expect_line(f, "Scale factors:")
         scale_factors = []
         while len(scale_factors) < self.num_scale_factors:
@@ -517,7 +542,6 @@ class Exelem(object):
         value_index = 0
         for field in self.fields:
             for component in field.components:
-                print component.component_type
                 if component.component_type == 'grid based':
                     component_num_values = np.product(
                             [i + 1 for i in component.divisions])
@@ -527,6 +551,7 @@ class Exelem(object):
                     else:
                         value_index += component_num_values
         raise ValueError("Couldn't find field and component values")
+
 
 class ExelemField(object):
     """A field definition from an exelem file
@@ -562,7 +587,7 @@ class ExelemComponent(object):
         # x. l.Lagrange*l.Lagrange*l.Lagrange, no modify, standard node based.
         #   #Nodes= 8
         declaration = f.readline().strip().split(',')
-        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9_ ]+)\.')
+        self.name = read_string_regex(f, declaration[0], r'^([a-zA-Z0-9 ]+)\.')
         self.component_type = declaration[2].strip().strip('.')
         if self.component_type == 'standard node based':
             self._read_nodal_component(f)
