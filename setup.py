@@ -2,9 +2,9 @@ from distutils.core import setup
 
 
 setup(
-        name='exfile',
+        name='mesh_tools',
         version='0.1',
-        py_modules=['exfile'],
-        author = 'Adam Reeve',
+        py_modules=['mesh_tools'],
+        author = 'Adam Reeve, Thiranja Prasad Babarenda Gamage',
         install_requires = ['numpy']
       )
