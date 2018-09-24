@@ -8,7 +8,6 @@ import sys
 import gzip
 import numpy as np
 import re
-import morphic
 
 __all__ = [
         "Exregion",
@@ -22,68 +21,6 @@ __all__ = [
         "ExelemElement",
         "ExfileError",
         ]
-
-def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
-                      dimension=2, interpolation='linear'):
-    """Convert an exnode and exelem files to a morphic mesh.
-
-    Only Linear lagrange elements supported.
-
-    Keyword arguments:
-    nodeFilename -- exnode filename
-    elementFilename -- exelem filename
-    coordinateField -- the field to read in
-    dimension -- dimension of mesh to read in
-    """
-
-    # Create morphic mesh
-    mesh = morphic.Mesh()
-
-    # Load exfiles
-    exnode = Exnode(nodeFilename)
-    exelem = Exelem(elementFilename, dimension)
-
-    # Add nodes
-    if interpolation == 'linear':
-        derivatives = [1]
-    elif interpolation == 'hermite':
-        derivatives = range(1,9)
-    for node_num in exnode.nodeids:
-        coordinates = []
-        for component in range(1, 4):
-            component_name = ["x", "y", "z"][component - 1]
-            componentValues = []
-            for derivative_idx, derivative in enumerate(derivatives):
-                componentValues.append(exnode.node_value(coordinateField,
-                                                     component_name, node_num,
-                                                     derivative))
-            coordinates.append(componentValues)
-
-        mesh.add_stdnode(node_num, coordinates, group='_default')
-        print 'Morhpic node added', node_num, coordinates
-
-    if dimension == 2:
-        if interpolation == 'linear':
-            element_interpolation = ['L1', 'L1']
-        if interpolation == 'quadratic':
-            element_interpolation = ['L2', 'L2']
-    elif dimension == 3:
-        if interpolation == 'linear':
-            element_interpolation = ['L1', 'L1', 'L1']
-        if interpolation == 'quadratic':
-            element_interpolation = ['L2', 'L2', 'L2']
-        if interpolation == 'hermite':
-            element_interpolation = ['H3', 'H3', 'H3']
-
-    # Add elements
-    for elem in exelem.elements:
-        mesh.add_element(elem.number, element_interpolation, elem.nodes)
-        print 'Morphic element added', elem.number
-
-    # Generate the mesh
-    mesh.generate(True)
-
-    return mesh
 
 def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation):
     """returns coordinates from an exnode file.

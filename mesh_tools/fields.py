@@ -1,4 +1,4 @@
-
+import numpy as np
 
 def generate_xi_on_face(face, value, num_points=4, dim=3):
     """

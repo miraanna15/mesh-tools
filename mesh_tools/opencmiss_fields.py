@@ -1,11 +1,11 @@
 import numpy as np
 from opencmiss.iron import iron
-import general
+import fields
 
 def interpolate_field(field, element_ids=[], num_values=4,dimension=3, derivative_number=1, xi=None, elems=None):
 
     if xi is None:
-        XiNd = general.generate_xi_grid_fem(num_points=num_values)
+        XiNd = fields.generate_xi_grid_fem(num_points=num_values)
 
         num_elem_values = XiNd.shape[0]
         num_Xe = len(element_ids)
