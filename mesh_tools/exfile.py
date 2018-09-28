@@ -48,7 +48,7 @@ def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation):
                                   component_name, node_num,
                                   derivative)
                 coordinates[node_idx,component_idx,derivative_idx] = value
-        print 'Node added', node_num, coordinates[node_idx,:]
+        print('Node added', node_num, coordinates[node_idx,:])
 
     return coordinates, exnode.nodeids
 

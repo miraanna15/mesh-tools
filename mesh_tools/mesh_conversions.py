@@ -40,7 +40,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
             coordinates.append(componentValues)
 
         mesh.add_stdnode(node_num, coordinates, group='_default')
-        print 'Morhpic node added', node_num, coordinates
+        print('Morhpic node added', node_num, coordinates)
 
     if dimension == 2:
         if interpolation == 'linear':
@@ -58,7 +58,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
     # Add elements
     for elem in exelem.elements:
         mesh.add_element(elem.number, element_interpolation, elem.nodes)
-        print 'Morphic element added', elem.number
+        print('Morphic element added', elem.number)
 
     # Generate the mesh
     mesh.generate(True)
@@ -172,9 +172,9 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         derivatives = range(1,9)
     coordinates = np.zeros((len(node_list), 3,len(derivatives)))
     for node_idx,morphic_node in enumerate(morphicMesh.nodes):
-        print "node: ", morphic_node.id
+        print("node: ", morphic_node.id)
         for comp_idx in range(3):
-            print "component: ", comp_idx + 1
+            print("component: ", comp_idx + 1)
             for derivative_idx, derivative in enumerate(derivatives):
                 coordinates[node_idx, comp_idx, derivative_idx] = morphic_node.values[comp_idx]
 
