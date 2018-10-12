@@ -1,5 +1,5 @@
 import numpy as np
-import exfile
+from mesh_tools import exfile
 from opencmiss.iron import iron
 import morphic
 
@@ -40,7 +40,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
             coordinates.append(componentValues)
 
         mesh.add_stdnode(node_num, coordinates, group='_default')
-        print('Morhpic node added', node_num, coordinates)
+        print('Morphic node added', node_num, coordinates)
 
     if dimension == 2:
         if interpolation == 'linear':
@@ -136,7 +136,7 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         mesh.NumberOfComponentsSet(1)
 
     node_list = morphicMesh.get_node_ids()[1]
-    element_list = morphicMesh.get_element_ids()
+    element_list = morphicMesh.get_element_cids()
 
     mesh.NumberOfElementsSet(len(element_list))
     nodes = iron.Nodes()
@@ -172,9 +172,7 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         derivatives = range(1,9)
     coordinates = np.zeros((len(node_list), 3,len(derivatives)))
     for node_idx,morphic_node in enumerate(morphicMesh.nodes):
-        print("node: ", morphic_node.id)
         for comp_idx in range(3):
-            print("component: ", comp_idx + 1)
             for derivative_idx, derivative in enumerate(derivatives):
                 coordinates[node_idx, comp_idx, derivative_idx] = morphic_node.values[comp_idx]
 

@@ -1,6 +1,6 @@
 import numpy as np
 from opencmiss.iron import iron
-import fields
+import mesh_tools.fields
 
 def interpolate_field(field, element_ids=[], num_values=4,dimension=3, derivative_number=1, xi=None, elems=None):
 
