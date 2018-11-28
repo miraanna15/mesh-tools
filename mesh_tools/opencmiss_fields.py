@@ -2,10 +2,13 @@ import numpy as np
 from opencmiss.iron import iron
 import fields
 
-def interpolate_field(field, element_ids=[], num_values=4,dimension=3, derivative_number=1, xi=None, elems=None):
+def interpolate_field(field, element_ids=[], xi=None, num_values=4,dimension=3, derivative_number=1, elems=None, face=None, value=0.):
 
     if xi is None:
-        XiNd = fields.generate_xi_grid_fem(num_points=num_values)
+        if face == None:
+            XiNd = fields.generate_xi_grid_fem(num_points=num_values)
+        else:
+            XiNd = fields.generate_xi_on_face(face, value, num_points=num_values, dim=dimension)
 
         num_elem_values = XiNd.shape[0]
         num_Xe = len(element_ids)
@@ -35,3 +38,40 @@ def interpolate_field(field, element_ids=[], num_values=4,dimension=3, derivativ
             values[point_idx, :] = field.ParameterSetInterpolateSingleXiDP(iron.FieldVariableTypes.U,
                                                          iron.FieldParameterSetTypes.VALUES, derivative_number, int(element_id), single_xi, dimension)
         return values
+
+
+def get_field_values(field, node_nums, derivative=1, dimension=3,
+                     variable=iron.FieldVariableTypes.U):
+    coordinates = np.zeros((len(node_nums), dimension))
+    for node_idx, node in enumerate(node_nums):
+        for component_idx, component in enumerate(range(1, dimension + 1)):
+            coordinates[node_idx, component_idx] = field.ParameterSetGetNodeDP(
+                variable, iron.FieldParameterSetTypes.VALUES, 1, derivative,
+                node, component)
+    return coordinates
+
+
+def set_field_values(field, node_nums, coordinates, derivative=1,
+                     variable=iron.FieldVariableTypes.U,
+                     update_scale_factors=False):
+    """
+    Update the field parameters
+    """
+    if update_scale_factors:
+        field.ParameterSetUpdateStart(iron.FieldVariableTypes.U,
+                                      iron.FieldParameterSetTypes.VALUES)
+    for node_idx, node in enumerate(node_nums):
+        for component_idx, component in enumerate(
+                range(1, coordinates.shape[1] + 1)):
+            field.ParameterSetUpdateNodeDP(
+                variable, iron.FieldParameterSetTypes.VALUES, 1, derivative,
+                node, component, coordinates[node_idx, component_idx])
+
+    if update_scale_factors:
+        field.ParameterSetUpdateFinish(iron.FieldVariableTypes.U,
+                                       iron.FieldParameterSetTypes.VALUES)
+
+def num_nodes_get(mesh, mesh_component=1):
+    nodes = iron.MeshNodes()
+    mesh.NodesGet(mesh_component, nodes)
+    return nodes.NumberOfNodesGet()
