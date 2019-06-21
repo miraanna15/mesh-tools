@@ -1,6 +1,5 @@
 import numpy as np
-from mesh_tools import exfile
-from opencmiss.iron import iron
+import mesh_tools
 import morphic
 
 def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
@@ -20,8 +19,8 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
     mesh = morphic.Mesh()
 
     # Load exfiles
-    exnode = exfile.Exnode(nodeFilename)
-    exelem = exfile.Exelem(elementFilename, dimension)
+    exnode = mesh_tools.Exnode(nodeFilename)
+    exelem = mesh_tools.Exelem(elementFilename, dimension)
 
     # Add nodes
     if interpolation == 'linear':
@@ -40,7 +39,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
             coordinates.append(componentValues)
 
         mesh.add_stdnode(node_num, coordinates, group='_default')
-        print('Morphic node added', node_num, coordinates)
+        #print('Morphic node added', node_num, coordinates)
 
     if dimension == 2:
         if interpolation == 'linear':
@@ -58,14 +57,14 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
     # Add elements
     for elem in exelem.elements:
         mesh.add_element(elem.number, element_interpolation, elem.nodes)
-        print('Morphic element added', elem.number)
+        #print('Morphic element added', elem.number)
 
     # Generate the mesh
     mesh.generate(True)
 
     return mesh
 
-def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, region, meshUserNumber,
+def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis, region, meshUserNumber,
                       dimension=2, interpolation='linear'):
     """Convert an exnode and exelem files to a morphic mesh.
 
@@ -78,10 +77,11 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, region, 
     dimension -- dimension of mesh to read in
     interpolation -- the interpolation of the mesh to read in
     """
+    from opencmiss.iron import iron
 
     # Load exfiles
-    exnode = exfile.Exnode(nodeFilename)
-    exelem = exfile.Exelem(elementFilename, dimension)
+    exnode = mesh_tools.Exnode(nodeFilename)
+    exelem = mesh_tools.Exelem(elementFilename, dimension)
 
     totalNumberOfNodes = len(exnode.nodeids)
     totalNumberOfElements = len(exelem.elements)
@@ -111,7 +111,7 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, region, 
 
     mesh.CreateFinish()
 
-    coordinates, node_ids = extract_exfile_coordinates(nodeFilename, coordinateField, interpolation)
+    coordinates, node_ids = mesh_tools.extract_exfile_coordinates(nodeFilename, coordinateField, interpolation)
 
     return mesh, coordinates, node_ids
 
@@ -126,6 +126,7 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
     morphicMesh -- morphic mesh
     dimension -- dimension of mesh to read in
     """
+    from opencmiss.iron import iron
 
     # Create mesh topology
     mesh = iron.Mesh()
@@ -136,7 +137,7 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         mesh.NumberOfComponentsSet(1)
 
     node_list = morphicMesh.get_node_ids()[1]
-    element_list = morphicMesh.get_element_cids()
+    element_list = morphicMesh.get_element_ids()
 
     mesh.NumberOfElementsSet(len(element_list))
     nodes = iron.Nodes()
@@ -177,3 +178,71 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
                 coordinates[node_idx, comp_idx, derivative_idx] = morphic_node.values[comp_idx]
 
     return mesh, coordinates, node_list, element_list
+
+
+def OpenCMISS_to_morphic(c_mesh, geometric_field,
+                      dimension=2, interpolation='linear'):
+    """Convert an OpenCMISS mesh to a morphic mesh.
+
+    Only Linear lagrange elements supported.
+
+    Keyword arguments:
+    morphicMesh -- morphic mesh
+    dimension -- dimension of mesh to read in
+    """
+
+    from opencmiss.iron import iron
+    mesh_nodes = iron.MeshNodes()
+    mesh_elements = iron.MeshElements()
+    c_mesh.NodesGet(1, mesh_nodes)
+    c_mesh.ElementsGet(1, mesh_elements)
+    # Create morphic mesh
+    mesh = morphic.Mesh()
+
+    mesh_elements.NodesGet()
+
+    # Load exfiles
+
+    # Add nodes
+    if interpolation == 'linear':
+        derivatives = [1]
+    elif interpolation == 'hermite':
+        derivatives = range(1,9)
+    for node_num in exnode.nodeids:
+        coordinates = []
+        for component in range(1, 4):
+            component_name = ["x", "y", "z"][component - 1]
+            componentValues = []
+            for derivative_idx, derivative in enumerate(derivatives):
+                componentValues.append(
+                    geometric_field.ParameterSetGetNodeDP(
+                            iron.FieldVariableTypes.U,
+                            iron.FieldParameterSetTypes.VALUES, 1, derivative,
+                            node_num, component))
+            coordinates.append(componentValues)
+
+        mesh.add_stdnode(node_num, coordinates, group='_default')
+        #print('Morphic node added', node_num, coordinates)
+
+    if dimension == 2:
+        if interpolation == 'linear':
+            element_interpolation = ['L1', 'L1']
+        if interpolation == 'quadratic':
+            element_interpolation = ['L2', 'L2']
+    elif dimension == 3:
+        if interpolation == 'linear':
+            element_interpolation = ['L1', 'L1', 'L1']
+        if interpolation == 'quadratic':
+            element_interpolation = ['L2', 'L2', 'L2']
+        if interpolation == 'hermite':
+            element_interpolation = ['H3', 'H3', 'H3']
+
+    # Add elements
+    for elem in exelem.elements:
+        mesh.add_element(elem.number, element_interpolation, elem.nodes)
+        #print('Morphic element added', elem.number)
+
+    # Generate the mesh
+    mesh.generate(True)
+
+    return mesh
