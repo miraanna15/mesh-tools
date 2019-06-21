@@ -20,9 +20,10 @@ __all__ = [
         "ExelemComponent",
         "ExelemElement",
         "ExfileError",
+        "extract_exfile_coordinates",
         ]
 
-def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation):
+def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation='none'):
     """returns coordinates from an exnode file.
 
     Keyword arguments:
@@ -31,14 +32,14 @@ def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation):
     interpolation -- the interpolation of the mesh to read in
     """
 
-    exnode = exfile.Exnode(nodeFilename)
+    exnode = Exnode(nodeFilename)
     totalNumberOfNodes = len(exnode.nodeids)
 
     # Add nodes
-    if interpolation == 'linear':
-        derivatives = [1]
-    elif interpolation == 'hermite':
+    if interpolation == 'hermite':
         derivatives = range(1,9)
+    else:
+        derivatives = [1]
     coordinates = np.zeros((totalNumberOfNodes, 3,len(derivatives)))
     for node_idx, node_num in enumerate(exnode.nodeids):
         for component_idx, component in enumerate(range(1, 4)):
@@ -48,7 +49,7 @@ def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation):
                                   component_name, node_num,
                                   derivative)
                 coordinates[node_idx,component_idx,derivative_idx] = value
-        print('Node added', node_num, coordinates[node_idx,:])
+        #print('Node added', node_num, coordinates[node_idx,:])
 
     return coordinates, exnode.nodeids
 
