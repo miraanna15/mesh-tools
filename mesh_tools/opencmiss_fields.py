@@ -1,8 +1,8 @@
 import numpy as np
 from opencmiss.iron import iron
-import mesh_tools.fields
 
 def interpolate_field(field, element_ids=[], xi=None, num_values=4,dimension=3, derivative_number=1, elems=None, face=None, value=0.):
+    import mesh_tools.fields as fields
 
     if xi is None:
         if face == None:
@@ -21,7 +21,7 @@ def interpolate_field(field, element_ids=[], xi=None, num_values=4,dimension=3, 
             for point_idx in range(num_elem_values):
                 single_xi = XiNd[point_idx,:]
                 values[elem_idx, point_idx, :] = field.ParameterSetInterpolateSingleXiDP(iron.FieldVariableTypes.U,
-                                                             iron.FieldParameterSetTypes.VALUES, derivative_number, element_id, single_xi, dimension)
+                                                             iron.FieldParameterSetTypes.VALUES, derivative_number, int(element_id), single_xi, dimension)
             xi[elem_idx, :, :] = XiNd
             elements[elem_idx, :] = element_id
 
