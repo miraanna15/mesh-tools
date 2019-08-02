@@ -51,6 +51,8 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
             element_interpolation = ['L1', 'L1', 'L1']
         if interpolation == 'quadratic':
             element_interpolation = ['L2', 'L2', 'L2']
+        if interpolation == 'cubic':
+            element_interpolation = ['L3', 'L3', 'L3']
         if interpolation == 'hermite':
             element_interpolation = ['H3', 'H3', 'H3']
 
@@ -117,7 +119,9 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis, r
 
 
 def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
-                      dimension=2, interpolation='linear',UsePressureBasis=False, pressureBasis=None):
+                         dimension=2, interpolation='linear',
+                         UsePressureBasis=False, pressureBasis=None,
+                         include_derivatives=True):
     """Convert an exnode and exelem files to a morphic mesh.
 
     Only Linear lagrange elements supported.
@@ -125,6 +129,8 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
     Keyword arguments:
     morphicMesh -- morphic mesh
     dimension -- dimension of mesh to read in
+    include_derivatives -- whether to include derivatives when returning mesh
+                           coordinates.
     """
     from opencmiss.iron import iron
 
@@ -137,6 +143,8 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         mesh.NumberOfComponentsSet(1)
 
     node_list = morphicMesh.get_node_ids()[1]
+    if len(node_list) == 0:
+        node_list = morphicMesh.get_node_ids(group = '_default')[1]
     element_list = morphicMesh.get_element_ids()
 
     mesh.NumberOfElementsSet(len(element_list))
@@ -171,11 +179,21 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
         derivatives = [1]
     elif interpolation == 'hermite':
         derivatives = range(1,9)
-    coordinates = np.zeros((len(node_list), 3,len(derivatives)))
+
+    if include_derivatives:
+        coordinates = np.zeros((len(node_list), 3,len(derivatives)))
+    else:
+        derivatives = [1]
+        coordinates = np.zeros((len(node_list), 3))
     for node_idx,morphic_node in enumerate(morphicMesh.nodes):
-        for comp_idx in range(3):
+        for component_idx in range(3):
             for derivative_idx, derivative in enumerate(derivatives):
-                coordinates[node_idx, comp_idx, derivative_idx] = morphic_node.values[comp_idx]
+                if include_derivatives:
+                    coordinates[node_idx,component_idx, derivative_idx] = \
+                        morphic_node.values[component_idx]
+                else:
+                    coordinates[node_idx,component_idx] = \
+                        morphic_node.values[component_idx]
 
     return mesh, coordinates, node_list, element_list
 
