@@ -23,24 +23,29 @@ __all__ = [
         "extract_exfile_coordinates",
         ]
 
-def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation='none'):
+def extract_exfile_coordinates(nodeFilename, coordinateField,
+                               interpolation='none', include_derivatives=True):
     """returns coordinates from an exnode file.
 
     Keyword arguments:
     nodeFilename -- exnode filename
     coordinateField -- the field to read in
     interpolation -- the interpolation of the mesh to read in
+    include_derivative -- whether to only return the 1st derivative
     """
 
     exnode = Exnode(nodeFilename)
     totalNumberOfNodes = len(exnode.nodeids)
 
-    # Add nodes
     if interpolation == 'hermite':
         derivatives = range(1,9)
     else:
         derivatives = [1]
-    coordinates = np.zeros((totalNumberOfNodes, 3,len(derivatives)))
+    if include_derivatives:
+        coordinates = np.zeros((totalNumberOfNodes, 3,len(derivatives)))
+    else:
+        derivatives = [1]
+        coordinates = np.zeros((totalNumberOfNodes, 3))
     for node_idx, node_num in enumerate(exnode.nodeids):
         for component_idx, component in enumerate(range(1, 4)):
             for derivative_idx, derivative in enumerate(derivatives):
@@ -48,8 +53,10 @@ def extract_exfile_coordinates(nodeFilename, coordinateField, interpolation='non
                 value = exnode.node_value(coordinateField,
                                   component_name, node_num,
                                   derivative)
-                coordinates[node_idx,component_idx,derivative_idx] = value
-        #print('Node added', node_num, coordinates[node_idx,:])
+                if include_derivatives:
+                    coordinates[node_idx,component_idx,derivative_idx] = value
+                else:
+                    coordinates[node_idx,component_idx] = value
 
     return coordinates, exnode.nodeids
 
