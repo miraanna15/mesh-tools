@@ -66,8 +66,10 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
 
     return mesh
 
-def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis, region, meshUserNumber,
-                      dimension=2, interpolation='linear'):
+def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
+                        region, meshUserNumber, dimension=2,
+                        interpolation='linear', pressure_basis=None,
+                        use_pressure_basis=False, elements=[]):
     """Convert an exnode and exelem files to a morphic mesh.
 
     Only Linear lagrange elements supported.
@@ -85,8 +87,17 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis, r
     exnode = mesh_tools.Exnode(nodeFilename)
     exelem = mesh_tools.Exelem(elementFilename, dimension)
 
+    if elements == []:
+        ex_elems = exelem.elements
+    else:
+        ex_elems = []
+        elements = exelem.elements
+        for elem in exelem.elements:
+            if elem.number in elements:
+                ex_elems.append(elem)
+
     totalNumberOfNodes = len(exnode.nodeids)
-    totalNumberOfElements = len(exelem.elements)
+    totalNumberOfElements = len(ex_elems)
 
     # Start the creation of a manually generated mesh in the region
     mesh = iron.Mesh()
@@ -100,16 +111,34 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis, r
     nodes.UserNumbersAllSet(exnode.nodeids)
     nodes.CreateFinish()
 
+    MESH_COMPONENT1 = 1
+    MESH_COMPONENT2 = 2
+
+    if (use_pressure_basis):
+        mesh.NumberOfComponentsSet(2)
+    else:
+        mesh.NumberOfComponentsSet(1)
+
     elements = iron.MeshElements()
-    meshComponentNumber = 1
-    elements.CreateStart(mesh, meshComponentNumber, basis)
+    elements.CreateStart(mesh, MESH_COMPONENT1, basis)
     elemNums = []
-    for elem in exelem.elements:
+    for elem in ex_elems:
         elemNums.append(elem.number)
+
     elements.UserNumbersAllSet(elemNums)
-    for elem_idx, elem in enumerate(exelem.elements):
+    for elem_idx, elem in enumerate(ex_elems):
         elements.NodesSet(elem_idx+1, elem.nodes)
     elements.CreateFinish()
+
+    if (use_pressure_basis):
+        linear_elem_node_idxs = [0, 3, 12, 15, 48, 51, 60, 63]
+        pressure_elements = iron.MeshElements()
+        pressure_elements.CreateStart(mesh, MESH_COMPONENT2, pressure_basis)
+        pressure_elements.UserNumbersAllSet(elemNums)
+        for elem_idx, elem in enumerate(ex_elems):
+            pressure_elements.NodesSet(elem_idx+1, np.array(
+                    elem.nodes, dtype=np.int32)[linear_elem_node_idxs])
+        pressure_elements.CreateFinish()
 
     mesh.CreateFinish()
 
