@@ -23,10 +23,10 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
     exelem = mesh_tools.Exelem(elementFilename, dimension)
 
     # Add nodes
-    if interpolation == 'linear':
-        derivatives = [1]
-    elif interpolation == 'hermite':
+    if interpolation == 'hermite':
         derivatives = range(1,9)
+    else:
+        derivatives = [1]
     for node_num in exnode.nodeids:
         coordinates = []
         for component in range(1, 4):
