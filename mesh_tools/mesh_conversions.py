@@ -37,6 +37,8 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
                                                      component_name, node_num,
                                                      derivative))
             coordinates.append(componentValues)
+        if interpolation != 'hermite':
+            coordinates = np.hstack(coordinates)
 
         mesh.add_stdnode(node_num, coordinates, group='_default')
         #print('Morphic node added', node_num, coordinates)
