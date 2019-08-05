@@ -68,7 +68,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
 
     return mesh
 
-def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
+def extracexfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
                         region, meshUserNumber, dimension=2,
                         interpolation='linear', pressure_basis=None,
                         use_pressure_basis=False, elements=[]):
@@ -93,7 +93,6 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
         ex_elems = exelem.elements
     else:
         ex_elems = []
-        elements = exelem.elements
         for elem in exelem.elements:
             if elem.number in elements:
                 ex_elems.append(elem)
@@ -128,9 +127,12 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
         elemNums.append(elem.number)
 
     elements.UserNumbersAllSet(elemNums)
+    node_ids = []
     for elem_idx, elem in enumerate(ex_elems):
-        elements.NodesSet(elem_idx+1, elem.nodes)
+        elements.NodesSet(elem.number, elem.nodes)
+        node_ids.append(elem.nodes)
     elements.CreateFinish()
+    node_ids = np.unique(node_ids)
 
     if (use_pressure_basis):
         linear_elem_node_idxs = [0, 3, 12, 15, 48, 51, 60, 63]
@@ -144,7 +146,7 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
 
     mesh.CreateFinish()
 
-    coordinates, node_ids = mesh_tools.extract_exfile_coordinates(nodeFilename, coordinateField, interpolation)
+    coordinates, node_ids = mesh_tools.extract_exfile_coordinates(nodeFilename, coordinateField,[], interpolation)
 
     return mesh, coordinates, node_ids
 

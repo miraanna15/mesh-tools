@@ -23,7 +23,7 @@ __all__ = [
         "extract_exfile_coordinates",
         ]
 
-def extract_exfile_coordinates(nodeFilename, coordinateField,
+def extract_exfile_coordinates(nodeFilename, coordinateField, nodes_ids = [],
                                interpolation='none', include_derivatives=True):
     """returns coordinates from an exnode file.
 
@@ -35,7 +35,13 @@ def extract_exfile_coordinates(nodeFilename, coordinateField,
     """
 
     exnode = Exnode(nodeFilename)
-    totalNumberOfNodes = len(exnode.nodeids)
+
+    if len(nodes_ids) ==0:
+        extracted_nodes = exnode.nodeids
+    else:
+        extracted_nodes = nodes_ids
+
+    totalNumberOfNodes = len(extracted_nodes)
 
     if interpolation == 'hermite':
         derivatives = range(1,9)
@@ -46,7 +52,8 @@ def extract_exfile_coordinates(nodeFilename, coordinateField,
     else:
         derivatives = [1]
         coordinates = np.zeros((totalNumberOfNodes, 3))
-    for node_idx, node_num in enumerate(exnode.nodeids):
+    for node_idx, node_num in enumerate(extracted_nodes):
+
         for component_idx, component in enumerate(range(1, 4)):
             for derivative_idx, derivative in enumerate(derivatives):
                 component_name = ["x", "y", "z"][component - 1]
@@ -58,7 +65,7 @@ def extract_exfile_coordinates(nodeFilename, coordinateField,
                 else:
                     coordinates[node_idx,component_idx] = value
 
-    return coordinates, exnode.nodeids
+    return coordinates, extracted_nodes
 
 class Exregion(object):
     """ Store and retrieve data from an exelem file
