@@ -68,7 +68,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
 
     return mesh
 
-def extracexfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
+def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
                         region, meshUserNumber, dimension=2,
                         interpolation='linear', pressure_basis=None,
                         use_pressure_basis=False, elements=[]):
@@ -146,7 +146,7 @@ def extracexfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, ba
 
     mesh.CreateFinish()
 
-    coordinates, node_ids = mesh_tools.extract_exfile_coordinates(nodeFilename, coordinateField,[], interpolation)
+    coordinates, node_ids = mesh_tools.extract_exfile_coordinates(nodeFilename, coordinateField,node_ids, interpolation)
 
     return mesh, coordinates, node_ids
 
