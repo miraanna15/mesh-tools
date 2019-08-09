@@ -3,7 +3,7 @@ import mesh_tools
 import morphic
 
 def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
-                      dimension=2, interpolation='linear'):
+                      dimension=2, interpolation='linear',elements=[]):
     """Convert an exnode and exelem files to a morphic mesh.
 
     Only Linear lagrange elements supported.
@@ -22,12 +22,26 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
     exnode = mesh_tools.Exnode(nodeFilename)
     exelem = mesh_tools.Exelem(elementFilename, dimension)
 
+    if elements == []:
+        ex_elems = exelem.elements
+    else:
+        ex_elems = []
+        for elem in exelem.elements:
+            if elem.number in elements:
+                ex_elems.append(elem)
+
+    node_ids = []
+    for elem_idx, elem in enumerate(ex_elems):
+        node_ids.append(elem.nodes)
+    node_ids = np.unique(node_ids)
+
     # Add nodes
     if interpolation == 'hermite':
         derivatives = range(1,9)
     else:
         derivatives = [1]
-    for node_num in exnode.nodeids:
+
+    for node_num in node_ids:
         coordinates = []
         for component in range(1, 4):
             component_name = ["x", "y", "z"][component - 1]
@@ -59,7 +73,7 @@ def exfile_to_morphic(nodeFilename, elementFilename, coordinateField,
             element_interpolation = ['H3', 'H3', 'H3']
 
     # Add elements
-    for elem in exelem.elements:
+    for elem in ex_elems:
         mesh.add_element(elem.number, element_interpolation, elem.nodes)
         #print('Morphic element added', elem.number)
 
@@ -122,27 +136,30 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
 
     elements = iron.MeshElements()
     elements.CreateStart(mesh, MESH_COMPONENT1, basis)
+
     elemNums = []
+    # elemNums = range(1,len(ex_elems))
     for elem in ex_elems:
         elemNums.append(elem.number)
 
     elements.UserNumbersAllSet(elemNums)
     node_ids = []
+
     for elem_idx, elem in enumerate(ex_elems):
-        elements.NodesSet(elem.number, elem.nodes)
+        elements.NodesSet(elem_idx+1, elem.nodes)
         node_ids.append(elem.nodes)
     elements.CreateFinish()
     node_ids = np.unique(node_ids)
 
     if (use_pressure_basis):
         linear_elem_node_idxs = [0, 3, 12, 15, 48, 51, 60, 63]
-        pressure_elements = iron.MeshElements()
-        pressure_elements.CreateStart(mesh, MESH_COMPONENT2, pressure_basis)
-        pressure_elements.UserNumbersAllSet(elemNums)
+        pressureElements = iron.MeshElements()
+        pressureElements.CreateStart(mesh, MESH_COMPONENT2, pressure_basis)
+        pressureElements.UserNumbersAllSet(elemNums)
         for elem_idx, elem in enumerate(ex_elems):
-            pressure_elements.NodesSet(elem_idx+1, np.array(
+            pressureElements.NodesSet(elem_idx+1, np.array(
                     elem.nodes, dtype=np.int32)[linear_elem_node_idxs])
-        pressure_elements.CreateFinish()
+        pressureElements.CreateFinish()
 
     mesh.CreateFinish()
 
@@ -154,7 +171,7 @@ def exfile_to_OpenCMISS(nodeFilename, elementFilename, coordinateField, basis,
 def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
                          dimension=2, interpolation='linear',
                          UsePressureBasis=False, pressureBasis=None,
-                         include_derivatives=True):
+                         include_derivatives=True, elements=[]):
     """Convert an exnode and exelem files to a morphic mesh.
 
     Only Linear lagrange elements supported.
@@ -166,19 +183,26 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
                            coordinates.
     """
     from opencmiss.iron import iron
-
+    if elements == []:
+        element_list = [int(cid)+1  for cid in morphicMesh.get_element_cids()]
+    else:
+        element_list = []
+        for element in morphicMesh.elements:
+            if element.id in elements:
+                element_list.append(element.id+1)
     # Create mesh topology
     mesh = iron.Mesh()
-    mesh.CreateStart(meshUserNumber, region, 3)
+    mesh.CreateStart(meshUserNumber, region, dimension)
     if (UsePressureBasis):
         mesh.NumberOfComponentsSet(2)
     else:
         mesh.NumberOfComponentsSet(1)
 
-    node_list = morphicMesh.get_node_ids()[1]
-    if len(node_list) == 0:
-        node_list = morphicMesh.get_node_ids(group = '_default')[1]
-    element_list = morphicMesh.get_element_ids()
+    node_list = []
+    for element_idx in element_list:
+        node_list.append( morphicMesh.elements[element_idx-1].node_ids)
+    node_list = np.unique(node_list)+1
+
 
     mesh.NumberOfElementsSet(len(element_list))
     nodes = iron.Nodes()
@@ -191,44 +215,53 @@ def morphic_to_OpenCMISS(morphicMesh, region, basis, meshUserNumber,
     elements = iron.MeshElements()
     elements.CreateStart(mesh, MESH_COMPONENT1, basis)
     elements.UserNumbersAllSet((np.array(element_list).astype('int32')))
-    global_element_idx = 0
-    for element_idx, element in enumerate(morphicMesh.elements):
-        global_element_idx += 1
-        elements.NodesSet(global_element_idx, np.array(element.node_ids, dtype='int32'))
+
+    for element_idx in element_list:
+        element = morphicMesh.elements[element_idx-1]
+        elements.NodesSet(element_idx, np.array(element.node_ids, dtype='int32')+1)
     elements.CreateFinish()
 
     if (UsePressureBasis):
-        pressure_elements = iron.MeshElements()
-        pressure_elements.CreateStart(mesh, MESH_COMPONENT2, pressureBasis)
-        pressure_elements.AllUserNumbersSet((np.array(element_list).astype('int32')))
-        for element_idx, element in enumerate(morphicMesh.elements):
-            pressure_elements.NodesSet(element.id, np.array(element.node_ids, dtype='int32'))
-        pressure_elements.CreateFinish()
+        linear_elem_node_idxs = [0, 3, 12, 15, 48, 51, 60, 63]
+        pressureElements = iron.MeshElements()
+        pressureElements.CreateStart(mesh, MESH_COMPONENT2, pressureBasis)
+        pressureElements.UserNumbersAllSet(element_list)
+        for element_idx in element_list:
+            pressureElements.NodesSet(element_idx,
+                             np.array(morphicMesh.elements[element_idx-1].node_ids, dtype='int32')[linear_elem_node_idxs]+1)
+        pressureElements.CreateFinish()
 
     mesh.CreateFinish()
 
     # Add nodes
-    if interpolation == 'linear' or interpolation == 'cubicLagrange':
-        derivatives = [1]
-    elif interpolation == 'hermite':
+    if interpolation == 'hermite':
         derivatives = range(1,9)
+    else:
+        derivatives = [1]
 
     if include_derivatives:
         coordinates = np.zeros((len(node_list), 3,len(derivatives)))
     else:
         derivatives = [1]
         coordinates = np.zeros((len(node_list), 3))
-    for node_idx,morphic_node in enumerate(morphicMesh.nodes):
-        for component_idx in range(3):
-            for derivative_idx, derivative in enumerate(derivatives):
-                if include_derivatives:
-                    coordinates[node_idx,component_idx, derivative_idx] = \
-                        morphic_node.values[component_idx]
-                else:
-                    coordinates[node_idx,component_idx] = \
-                        morphic_node.values[component_idx]
 
-    return mesh, coordinates, node_list, element_list
+    morphicNodes = morphicMesh.nodes
+    _, morphicNodesIds = morphicMesh.get_node_ids()
+
+    for node_indx,node_id in enumerate(node_list):
+
+        for component_idx, component in enumerate(range(1, 4)):
+            for derivative_idx, derivative in enumerate(derivatives):
+
+                if include_derivatives:
+                    coordinates[node_indx,component_idx, derivative_idx] = \
+                        morphicNodes[node_id-1].values[component_idx]
+                else:
+                    coordinates[node_indx,component_idx] = \
+                        morphicNodes[node_id-1].values[component_idx]
+
+
+    return mesh, coordinates, node_list
 
 
 def OpenCMISS_to_morphic(c_mesh, geometric_field,
